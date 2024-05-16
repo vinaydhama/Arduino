@@ -147,6 +147,14 @@ void ESP8266WiFiScanClass::scanDelete() {
     _scanComplete = false;
 }
 
+/**
+ * returns const pointer to the requested scanned wifi entry for furthor parsing.
+ * @param networkItem int
+ * @return struct bss_info*, may be NULL
+ */
+const bss_info *ESP8266WiFiScanClass::getScanInfoByIndex(int i) {
+    return reinterpret_cast<const bss_info*>(_getScanInfoByIndex(i));
+};
 
 /**
  * loads all infos from a scanned wifi in to the ptr parameters
@@ -249,6 +257,21 @@ uint8_t * ESP8266WiFiScanClass::BSSID(uint8_t i) {
         return 0;
     }
     return it->bssid;
+}
+
+/**
+ * fill MAC / BSSID of scanned wifi
+ * @param i specify from which network item want to get the information
+ * @param bssid  pointer to uint8_t array with length WL_MAC_ADDR_LENGTH
+ * @return uint8_t * MAC / BSSID of scanned wifi
+ */
+uint8_t * ESP8266WiFiScanClass::BSSID(uint8_t i, uint8_t* bssid) {
+    struct bss_info* it = reinterpret_cast<struct bss_info*>(_getScanInfoByIndex(i));
+    if(!it) {
+        return 0;
+    }
+    memcpy(bssid, it->bssid, WL_MAC_ADDR_LENGTH);
+    return bssid;
 }
 
 /**

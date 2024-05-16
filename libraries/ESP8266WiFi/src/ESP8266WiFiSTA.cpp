@@ -61,7 +61,7 @@ static bool sta_config_equal(const station_config& lhs, const station_config& rh
  */
 static bool sta_config_equal(const station_config& lhs, const station_config& rhs) {
 
-#ifdef NONOSDK3V0
+#if (NONOSDK >= (0x30000))
     static_assert(sizeof(station_config) == 116, "struct station_config has changed, please update comparison function");
 #else
     static_assert(sizeof(station_config) == 112, "struct station_config has changed, please update comparison function");
@@ -94,8 +94,18 @@ static bool sta_config_equal(const station_config& lhs, const station_config& rh
         return false;
     }
 
-#ifdef NONOSDK3V0
-    if (lhs.open_and_wep_mode_disable != rhs.open_and_wep_mode_disable) {
+#if (NONOSDK >= (0x30000))
+    if(lhs.open_and_wep_mode_disable != rhs.open_and_wep_mode_disable) {
+        return false;
+    }
+#endif
+
+#if (NONOSDK >= (0x30200))
+    if(lhs.channel != rhs.channel) {
+        return false;
+    }
+
+    if(lhs.all_channel_scan != rhs.all_channel_scan) {
         return false;
     }
 #endif
@@ -156,8 +166,12 @@ wl_status_t ESP8266WiFiSTAClass::begin(const char* ssid, const char *passphrase,
     }
 
     conf.threshold.rssi = -127;
-#ifdef NONOSDK3V0
+#if (NONOSDK >= (0x30000))
     conf.open_and_wep_mode_disable = !(_useInsecureWEP || *conf.password == 0);
+#endif
+#if (NONOSDK >= (0x30200))
+    conf.channel = channel;
+    conf.all_channel_scan = true;
 #endif
 
     if(bssid) {
@@ -325,6 +339,45 @@ bool ESP8266WiFiSTAClass::config(IPAddress local_ip, IPAddress arg1, IPAddress a
   return true;
 }
 
+bool ESP8266WiFiSTAClass::config(IPAddress local_ip, IPAddress dns) {
+
+    if (!local_ip.isSet())
+        return config(INADDR_ANY, INADDR_ANY, INADDR_ANY);
+
+    if (!local_ip.isV4())
+        return false;
+
+    IPAddress gw(local_ip);
+    gw[3] = 1;
+    if (!dns.isSet()) {
+        dns = gw;
+    }
+    return config(local_ip, dns, gw);
+}
+
+/**
+ * Change DNS for static IP configuration
+ * @param dns1       Static DNS server 1
+ * @param dns2       Static DNS server 2 (optional)
+ */
+bool ESP8266WiFiSTAClass::setDNS(IPAddress dns1, IPAddress dns2) {
+
+  if((WiFi.getMode() & WIFI_STA) == 0)
+    return false;
+
+  if(dns1.isSet()) {
+      // Set DNS1-Server
+      dns_setserver(0, dns1);
+  }
+
+  if(dns2.isSet()) {
+      // Set DNS2-Server
+      dns_setserver(1, dns2);
+  }
+
+  return true;
+}
+
 /**
  * will force a disconnect an then start reconnecting to AP
  * @return ok
@@ -339,30 +392,48 @@ bool ESP8266WiFiSTAClass::reconnect() {
 }
 
 /**
- * Disconnect from the network
- * @param wifioff
+ * Disconnect from the network with clearing saved credentials
+ * @param wifioff Bool indicating whether STA should be disabled.
  * @return  one value of wl_status_t enum
  */
 bool ESP8266WiFiSTAClass::disconnect(bool wifioff) {
+    // Disconnect with clearing saved credentials.
+    return disconnect(wifioff, true);
+}
+
+/**
+ * Disconnect from the network
+ * @param wifioff Bool indicating whether STA should be disabled. 
+ * @param eraseCredentials Bool indicating whether saved credentials should be erased.
+ * @return  one value of wl_status_t enum
+ */
+bool ESP8266WiFiSTAClass::disconnect(bool wifioff, bool eraseCredentials) {
     bool ret = false;
-    struct station_config conf;
-    *conf.ssid = 0;
-    *conf.password = 0;
+
+    if (eraseCredentials) {
+        // Read current config.
+        struct station_config conf;
+        wifi_station_get_config(&conf);
+
+        // Erase credentials.
+        memset(&conf.ssid, 0, sizeof(conf.ssid));
+        memset(&conf.password, 0, sizeof(conf.password));
+
+        // Store modiffied config.
+        ETS_UART_INTR_DISABLE();
+        if(WiFi._persistent) {
+            wifi_station_set_config(&conf);
+        } else {
+            wifi_station_set_config_current(&conf);
+        }
+        ETS_UART_INTR_ENABLE();
+    }
 
     // API Reference: wifi_station_disconnect() need to be called after system initializes and the ESP8266 Station mode is enabled.
     if (WiFi.getMode() & WIFI_STA)
         ret = wifi_station_disconnect();
     else
         ret = true;
-
-    ETS_UART_INTR_DISABLE();
-    if(WiFi._persistent) {
-        wifi_station_set_config(&conf);
-    } else {
-        wifi_station_set_config_current(&conf);
-    }
-
-    ETS_UART_INTR_ENABLE();
 
     if(wifioff) {
         WiFi.enableSTA(false);
@@ -573,6 +644,18 @@ uint8_t* ESP8266WiFiSTAClass::BSSID(void) {
     static struct station_config conf;
     wifi_station_get_config(&conf);
     return reinterpret_cast<uint8_t*>(conf.bssid);
+}
+
+/**
+ * Fill the current bssid / mac associated with the network if configured
+ * @param bssid  pointer to uint8_t array with length WL_MAC_ADDR_LENGTH
+ * @return bssid uint8_t *
+ */
+uint8_t* ESP8266WiFiSTAClass::BSSID(uint8_t* bssid) {
+    struct station_config conf;
+    wifi_station_get_config(&conf);
+    memcpy(bssid, conf.bssid, WL_MAC_ADDR_LENGTH);
+    return bssid;
 }
 
 /**

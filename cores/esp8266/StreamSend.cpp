@@ -19,20 +19,25 @@
     parsing functions based on TextFinder library by Michael Margolis
 */
 
-
 #include <Arduino.h>
 #include <StreamDev.h>
 
-size_t Stream::sendGeneric(Print* to,
-                           const ssize_t len,
-                           const int readUntilChar,
+size_t Stream::sendGeneric(Stream* to, const ssize_t len, const int readUntilChar,
                            const esp8266::polledTimeout::oneShotFastMs::timeType timeoutMs)
 {
+    // "neverExpires (default, impossible)" is translated to default timeout
+    esp8266::polledTimeout::oneShotFastMs::timeType inputTimeoutMs
+        = timeoutMs >= esp8266::polledTimeout::oneShotFastMs::neverExpires ? getTimeout()
+                                                                           : timeoutMs;
+
+    esp8266::polledTimeout::oneShotFastMs::timeType mainTimeoutMs = std::max(
+        inputTimeoutMs, (esp8266::polledTimeout::oneShotFastMs::timeType)to->getTimeout());
+
     setReport(Report::Success);
 
     if (len == 0)
     {
-        return 0;    // conveniently avoids timeout for no requested data
+        return 0;  // conveniently avoids timeout for no requested data
     }
 
     // There are two timeouts:
@@ -46,25 +51,63 @@ size_t Stream::sendGeneric(Print* to,
 
     if (hasPeekBufferAPI())
     {
-        return SendGenericPeekBuffer(to, len, readUntilChar, timeoutMs);
+        return SendGenericPeekBuffer(to, len, readUntilChar, mainTimeoutMs);
     }
 
     if (readUntilChar >= 0)
     {
-        return SendGenericRegularUntil(to, len, readUntilChar, timeoutMs);
+        return SendGenericRegularUntil(to, len, readUntilChar, mainTimeoutMs);
     }
 
-    return SendGenericRegular(to, len, timeoutMs);
+    return SendGenericRegular(to, len, mainTimeoutMs);
 }
 
-
-size_t Stream::SendGenericPeekBuffer(Print* to, const ssize_t len, const int readUntilChar, const esp8266::polledTimeout::oneShotFastMs::timeType timeoutMs)
+size_t Stream::sendGeneric(Print* to, const ssize_t len, const int readUntilChar,
+                           const esp8266::polledTimeout::oneShotFastMs::timeType timeoutMs)
 {
     // "neverExpires (default, impossible)" is translated to default timeout
-    esp8266::polledTimeout::oneShotFastMs timedOut(timeoutMs >= esp8266::polledTimeout::oneShotFastMs::neverExpires ? getTimeout() : timeoutMs);
+    esp8266::polledTimeout::oneShotFastMs::timeType inputTimeoutMs
+        = timeoutMs >= esp8266::polledTimeout::oneShotFastMs::neverExpires ? getTimeout()
+                                                                           : timeoutMs;
+
+    setReport(Report::Success);
+
+    if (len == 0)
+    {
+        return 0;  // conveniently avoids timeout for no requested data
+    }
+
+    // There are two timeouts:
+    // - read (network, serial, ...)
+    // - write (network, serial, ...)
+    // However
+    // - getTimeout() is for reading only
+    // - there is no getOutputTimeout() api
+    // So we use getTimeout() for both,
+    // (also when inputCanTimeout() is false)
+
+    if (hasPeekBufferAPI())
+    {
+        return SendGenericPeekBuffer(to, len, readUntilChar, inputTimeoutMs);
+    }
+
+    if (readUntilChar >= 0)
+    {
+        return SendGenericRegularUntil(to, len, readUntilChar, inputTimeoutMs);
+    }
+
+    return SendGenericRegular(to, len, inputTimeoutMs);
+}
+
+size_t
+Stream::SendGenericPeekBuffer(Print* to, const ssize_t len, const int readUntilChar,
+                              const esp8266::polledTimeout::oneShotFastMs::timeType timeoutMs)
+{
+    esp8266::polledTimeout::oneShotFastMs timedOut(timeoutMs);
+
     // len==-1 => maxLen=0 <=> until starvation
-    const size_t maxLen = std::max((ssize_t)0, len);
-    size_t written = 0;
+    const size_t maxLen  = std::max((ssize_t)0, len);
+    size_t       written = 0;
 
     while (!maxLen || written < maxLen)
     {
@@ -90,13 +133,13 @@ size_t Stream::SendGenericPeekBuffer(Print* to, const ssize_t len, const int rea
         if (w)
         {
             const char* directbuf = peekBuffer();
-            bool foundChar = false;
+            bool        foundChar = false;
             if (readUntilChar >= 0)
             {
                 const char* last = (const char*)memchr(directbuf, readUntilChar, w);
                 if (last)
                 {
-                    w = std::min((size_t)(last - directbuf), w);
+                    w         = std::min((size_t)(last - directbuf), w);
                     foundChar = true;
                 }
             }
@@ -104,7 +147,7 @@ size_t Stream::SendGenericPeekBuffer(Print* to, const ssize_t len, const int rea
             {
                 peekConsume(w);
                 written += w;
-                timedOut.reset(); // something has been written
+                timedOut.reset();  // something has been written
             }
             if (foundChar)
             {
@@ -145,16 +188,18 @@ size_t Stream::SendGenericPeekBuffer(Print* to, const ssize_t len, const int rea
     return written;
 }
 
-size_t Stream::SendGenericRegularUntil(Print* to, const ssize_t len, const int readUntilChar, const esp8266::polledTimeout::oneShotFastMs::timeType timeoutMs)
+size_t
+Stream::SendGenericRegularUntil(Print* to, const ssize_t len, const int readUntilChar,
+                                const esp8266::polledTimeout::oneShotFastMs::timeType timeoutMs)
 {
     // regular Stream API
     // no other choice than reading byte by byte
 
-    // "neverExpires (default, impossible)" is translated to default timeout
-    esp8266::polledTimeout::oneShotFastMs timedOut(timeoutMs >= esp8266::polledTimeout::oneShotFastMs::neverExpires ? getTimeout() : timeoutMs);
+    esp8266::polledTimeout::oneShotFastMs timedOut(timeoutMs);
+
     // len==-1 => maxLen=0 <=> until starvation
-    const size_t maxLen = std::max((ssize_t)0, len);
-    size_t written = 0;
+    const size_t maxLen  = std::max((ssize_t)0, len);
+    size_t       written = 0;
 
     while (!maxLen || written < maxLen)
     {
@@ -186,7 +231,7 @@ size_t Stream::SendGenericRegularUntil(Print* to, const ssize_t len, const int r
                 break;
             }
             written += 1;
-            timedOut.reset(); // something has been written
+            timedOut.reset();  // something has been written
         }
 
         if (timedOut)
@@ -221,16 +266,17 @@ size_t Stream::SendGenericRegularUntil(Print* to, const ssize_t len, const int r
     return written;
 }
 
-size_t Stream::SendGenericRegular(Print* to, const ssize_t len, const esp8266::polledTimeout::oneShotFastMs::timeType timeoutMs)
+size_t Stream::SendGenericRegular(Print* to, const ssize_t len,
+                                  const esp8266::polledTimeout::oneShotFastMs::timeType timeoutMs)
 {
     // regular Stream API
     // use an intermediary buffer
 
-    // "neverExpires (default, impossible)" is translated to default timeout
-    esp8266::polledTimeout::oneShotFastMs timedOut(timeoutMs >= esp8266::polledTimeout::oneShotFastMs::neverExpires ? getTimeout() : timeoutMs);
+    esp8266::polledTimeout::oneShotFastMs timedOut(timeoutMs);
+
     // len==-1 => maxLen=0 <=> until starvation
-    const size_t maxLen = std::max((ssize_t)0, len);
-    size_t written = 0;
+    const size_t maxLen  = std::max((ssize_t)0, len);
+    size_t       written = 0;
 
     while (!maxLen || written < maxLen)
     {
@@ -243,7 +289,7 @@ size_t Stream::SendGenericRegular(Print* to, const ssize_t len, const esp8266::p
 
         size_t w = to->availableForWrite();
         if (w == 0 && !to->outputCanTimeout())
-            // no more data can be written, ever
+        // no more data can be written, ever
         {
             break;
         }
@@ -256,7 +302,7 @@ size_t Stream::SendGenericRegular(Print* to, const ssize_t len, const esp8266::p
         w = std::min(w, (decltype(w))temporaryStackBufferSize);
         if (w)
         {
-            char temp[w];
+            char    temp[w];
             ssize_t r = read(temp, w);
             if (r < 0)
             {
@@ -270,7 +316,7 @@ size_t Stream::SendGenericRegular(Print* to, const ssize_t len, const esp8266::p
                 setReport(Report::WriteError);
                 break;
             }
-            timedOut.reset(); // something has been written
+            timedOut.reset();  // something has been written
         }
 
         if (timedOut)
@@ -305,19 +351,19 @@ size_t Stream::SendGenericRegular(Print* to, const ssize_t len, const esp8266::p
     return written;
 }
 
-Stream& operator << (Stream& out, String& string)
+Stream& operator<<(Stream& out, String& string)
 {
     StreamConstPtr(string).sendAll(out);
     return out;
 }
 
-Stream& operator << (Stream& out, StreamString& stream)
+Stream& operator<<(Stream& out, StreamString& stream)
 {
     stream.sendAll(out);
     return out;
 }
 
-Stream& operator << (Stream& out, Stream& stream)
+Stream& operator<<(Stream& out, Stream& stream)
 {
     if (stream.streamRemaining() < 0)
     {
@@ -339,13 +385,13 @@ Stream& operator << (Stream& out, Stream& stream)
     return out;
 }
 
-Stream& operator << (Stream& out, const char* text)
+Stream& operator<<(Stream& out, const char* text)
 {
-    StreamConstPtr(text).sendAll(out);
+    StreamConstPtr(text, strlen_P(text)).sendAll(out);
     return out;
 }
 
-Stream& operator << (Stream& out, const __FlashStringHelper* text)
+Stream& operator<<(Stream& out, const __FlashStringHelper* text)
 {
     StreamConstPtr(text).sendAll(out);
     return out;

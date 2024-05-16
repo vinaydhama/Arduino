@@ -91,10 +91,10 @@ public:
   virtual uint8_t connected() override;
   virtual operator bool() override;
 
-  IPAddress remoteIP();
-  uint16_t  remotePort();
-  IPAddress localIP();
-  uint16_t  localPort();
+  virtual IPAddress remoteIP();
+  virtual uint16_t  remotePort();
+  virtual IPAddress localIP();
+  virtual uint16_t  localPort();
 
   static void setLocalPortStart(uint16_t port) { _localPort = port; }
 
@@ -103,16 +103,16 @@ public:
   friend class WiFiServer;
 
   using Print::write;
-
+  
   static void stopAll();
   static void stopAllExcept(WiFiClient * c);
 
-  void     keepAlive (uint16_t idle_sec = TCP_DEFAULT_KEEPALIVE_IDLE_SEC, uint16_t intv_sec = TCP_DEFAULT_KEEPALIVE_INTERVAL_SEC, uint8_t count = TCP_DEFAULT_KEEPALIVE_COUNT);
-  bool     isKeepAliveEnabled () const;
-  uint16_t getKeepAliveIdle () const;
-  uint16_t getKeepAliveInterval () const;
-  uint8_t  getKeepAliveCount () const;
-  void     disableKeepAlive () { keepAlive(0, 0, 0); }
+  virtual void     keepAlive (uint16_t idle_sec = TCP_DEFAULT_KEEPALIVE_IDLE_SEC, uint16_t intv_sec = TCP_DEFAULT_KEEPALIVE_INTERVAL_SEC, uint8_t count = TCP_DEFAULT_KEEPALIVE_COUNT);
+  virtual bool     isKeepAliveEnabled () const;
+  virtual uint16_t getKeepAliveIdle () const;
+  virtual uint16_t getKeepAliveInterval () const;
+  virtual uint8_t  getKeepAliveCount () const;
+  virtual void     disableKeepAlive () { keepAlive(0, 0, 0); }
 
   // default NoDelay=False (Nagle=True=!NoDelay)
   // Nagle is for shortly delaying outgoing data, to send less/bigger packets
@@ -147,6 +147,10 @@ public:
 
   virtual bool outputCanTimeout () override { return connected(); }
   virtual bool inputCanTimeout () override { return connected(); }
+
+  // Immediately stops this client instance.
+  // Unlike stop(), does not wait to gracefuly shutdown the connection.
+  void abort();
 
 protected:
 

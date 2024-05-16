@@ -20,7 +20,6 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-#define LWIP_INTERNAL
 #include <functional>
 
 extern "C"
@@ -83,6 +82,11 @@ uint8_t WiFiUDP::begin(uint16_t port)
     _ctx = new UdpContext;
     _ctx->ref();
     return (_ctx->listen(IPAddress(), port)) ? 1 : 0;
+}
+
+uint8_t WiFiUDP::beginMulticast(IPAddress multicast, uint16_t port)
+{
+    return beginMulticast(IP_ADDR_ANY, multicast, port);
 }
 
 uint8_t WiFiUDP::beginMulticast(IPAddress interfaceAddr, IPAddress multicast, uint16_t port)

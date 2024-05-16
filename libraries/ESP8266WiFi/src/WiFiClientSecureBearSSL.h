@@ -34,7 +34,7 @@ namespace BearSSL {
 class WiFiClientSecureCtx : public WiFiClient {
   public:
     WiFiClientSecureCtx();
-    WiFiClientSecureCtx(const WiFiClientSecure &rhs) = delete;
+    WiFiClientSecureCtx(const WiFiClientSecureCtx &rhs) = delete;
     ~WiFiClientSecureCtx() override;
 
     WiFiClientSecureCtx& operator=(const WiFiClientSecureCtx&) = delete;
@@ -43,7 +43,7 @@ class WiFiClientSecureCtx : public WiFiClient {
     // TODO: don't remove just yet to avoid including the WiFiClient default implementation and unintentionally causing
     //       a 'slice' that this method tries to avoid in the first place
     std::unique_ptr<WiFiClient> clone() const override {
-        return std::unique_ptr<WiFiClient>(new WiFiClientSecureCtx(*this));
+        return nullptr;
     }
 
     int connect(IPAddress ip, uint16_t port) override;
@@ -195,7 +195,13 @@ class WiFiClientSecureCtx : public WiFiClient {
     unsigned char *_recvapp_buf;
     size_t _recvapp_len;
 
+    int _pollRecvBuffer(); // If there's a buffer with some pending data, return it's length
+                           // If there's no buffer, poll the engine and store any received data there and return the length
+                           // (which also may change the internal state, e.g. make us disconnected)
+
     bool _clientConnected(); // Is the underlying socket alive?
+    bool _engineConnected(); // Are both socket and the bearssl engine alive?
+
     std::shared_ptr<unsigned char> _alloc_iobuf(size_t sz);
     void _freeSSL();
     int _run_until(unsigned target, bool blocking = true);
@@ -278,6 +284,11 @@ class WiFiClientSecure : public WiFiClient {
     void flush() override { (void)flush(0); }
     void stop() override { (void)stop(0); }
 
+    IPAddress remoteIP() override { return _ctx->remoteIP(); }
+    uint16_t  remotePort() override { return _ctx->remotePort(); }
+    IPAddress localIP() override { return _ctx->localIP(); }
+    uint16_t  localPort() override { return _ctx->localPort(); }
+
     // Allow sessions to be saved/restored automatically to a memory area
     void setSession(Session *session) { _ctx->setSession(session); }
 
@@ -346,6 +357,21 @@ class WiFiClientSecure : public WiFiClient {
 
     // consume bytes after use (see peekBuffer)
     virtual void peekConsume (size_t consume) override { return _ctx->peekConsume(consume); }
+  
+    void keepAlive(uint16_t idle_sec = TCP_DEFAULT_KEEPALIVE_IDLE_SEC, uint16_t intv_sec = TCP_DEFAULT_KEEPALIVE_INTERVAL_SEC, uint8_t count = TCP_DEFAULT_KEEPALIVE_COUNT) override
+    {
+      _ctx->keepAlive(idle_sec, intv_sec, count);
+    }
+
+    bool isKeepAliveEnabled() const override { return _ctx->isKeepAliveEnabled(); };
+
+    uint16_t getKeepAliveIdle() const override { return _ctx->getKeepAliveIdle(); };
+
+    uint16_t getKeepAliveInterval() const override { return _ctx->getKeepAliveInterval(); };
+
+    uint8_t getKeepAliveCount() const override { return _ctx->getKeepAliveCount(); };
+
+    void disableKeepAlive() override { _ctx->disableKeepAlive(); };
 
   private:
     std::shared_ptr<WiFiClientSecureCtx> _ctx;

@@ -58,16 +58,16 @@ int Stream::timedPeek() {
 
 // returns peek of the next digit in the stream or -1 if timeout
 // discards non-numeric characters
-int Stream::peekNextDigit() {
+int Stream::peekNextDigit(bool detectDecimal) {
     int c;
     while(1) {
         c = timedPeek();
-        if(c < 0)
-            return c;  // timeout
-        if(c == '-')
+        if( c < 0 || // timeout
+            c == '-' ||
+            ( c >= '0' && c <= '9' ) ||
+            ( detectDecimal && c == '.' ) ) {
             return c;
-        if(c >= '0' && c <= '9')
-            return c;
+        }
         read();  // discard non-numeric
     }
 }
@@ -141,7 +141,7 @@ long Stream::parseInt(char skipChar) {
     long value = 0;
     int c;
 
-    c = peekNextDigit();
+    c = peekNextDigit(false);
     // ignore non numeric leading characters
     if(c < 0)
         return 0; // zero returned if timeout
@@ -176,7 +176,7 @@ float Stream::parseFloat(char skipChar) {
     int c;
     float fraction = 1.0f;
 
-    c = peekNextDigit();
+    c = peekNextDigit(true);
     // ignore non numeric leading characters
     if(c < 0)
         return 0; // zero returned if timeout
@@ -262,6 +262,32 @@ String Stream::readStringUntil(char terminator) {
     return ret;
 }
 
+String Stream::readStringUntil(const char* terminator, uint32_t untilTotalNumberOfOccurrences) {
+    String ret;
+    int c;
+    uint32_t occurrences = 0;
+    size_t termLen = strlen(terminator);
+    size_t termIndex = 0;
+    size_t index = 0;
+
+    while ((c = timedRead()) > 0) {
+        ret += (char) c;
+        index++;
+
+        if (terminator[termIndex] == c) {
+            if (++termIndex == termLen && ++occurrences == untilTotalNumberOfOccurrences) {
+                // don't include terminator in returned string
+                ret.remove(index - termIndex, termLen);
+                break;
+            }
+        } else {
+            termIndex = 0;
+        }
+    }
+
+    return ret;
+}
+
 // read what can be read, immediate exit on unavailable data
 // prototype similar to Arduino's `int Client::read(buf, len)`
 int Stream::read (uint8_t* buffer, size_t maxLen)
@@ -274,7 +300,7 @@ int Stream::read (uint8_t* buffer, size_t maxLen)
         int c = read();
         if (c == -1)
             break;
-        buffer[nbread++] = read();
+        buffer[nbread++] = c;
     }
     return nbread;
 }

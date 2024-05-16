@@ -18,34 +18,50 @@
  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-#include "cont.h"
+#include <ets_sys.h>
+
 #include <stddef.h>
 #include <string.h>
-#include "ets_sys.h"
 
-extern "C" {
+#include "core_esp8266_features.h"
+#include "debug.h"
 
-#define CONT_STACKGUARD 0xfeefeffe
+#include "cont.h"
+
+extern "C"
+{
+
+static constexpr uint32_t CONT_STACKSIZE_U32 { sizeof(cont_t::stack) / sizeof(*cont_t::stack) };
 
 void cont_init(cont_t* cont) {
     memset(cont, 0, sizeof(cont_t));
     
     cont->stack_guard1 = CONT_STACKGUARD;
     cont->stack_guard2 = CONT_STACKGUARD;
-    cont->stack_end = cont->stack + (sizeof(cont->stack) / 4);
+    cont->stack_end = &cont->stack[0] + CONT_STACKSIZE_U32;
     cont->struct_start = (unsigned*) cont;
     
     // fill stack with magic values to check high water mark
-    for(int pos = 0; pos < (int)(sizeof(cont->stack) / 4); pos++)
+    for(int pos = 0; pos < (int)(CONT_STACKSIZE_U32); pos++)
     {
         cont->stack[pos] = CONT_STACKGUARD;
     }
 }
 
-int IRAM_ATTR cont_check(cont_t* cont) {
-    if(cont->stack_guard1 != CONT_STACKGUARD || cont->stack_guard2 != CONT_STACKGUARD) return 1;
+void IRAM_ATTR cont_check_guard(cont_t* cont) {
+    if ((cont->stack_guard1 != CONT_STACKGUARD)
+     || (cont->stack_guard2 != CONT_STACKGUARD))
+    {
+        __stack_chk_fail();
+        __builtin_unreachable();
+    }
+}
 
-    return 0;
+void IRAM_ATTR cont_check_overflow(cont_t* cont) {
+    if (cont->sp_suspend && (cont->sp_suspend < &cont->stack[0])) {
+        __stack_overflow(cont, cont->sp_suspend);
+        __builtin_unreachable();
+    }
 }
 
 // No need for this to be in IRAM, not expected to be IRQ called

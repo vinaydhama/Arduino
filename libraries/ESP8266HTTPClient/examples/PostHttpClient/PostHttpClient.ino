@@ -15,12 +15,12 @@
         bin/PostServer/PostServer
    then put your PC's IP address in SERVER_IP below, port 9080 (instead of default 80):
 */
-//#define SERVER_IP "10.0.1.7:9080" // PC address with emulation on host
+// #define SERVER_IP "10.0.1.7:9080" // PC address with emulation on host
 #define SERVER_IP "192.168.1.42"
 
 #ifndef STASSID
 #define STASSID "your-ssid"
-#define STAPSK  "your-password"
+#define STAPSK "your-password"
 #endif
 
 void setup() {
@@ -40,7 +40,6 @@ void setup() {
   Serial.println("");
   Serial.print("Connected! IP address: ");
   Serial.println(WiFi.localIP());
-
 }
 
 void loop() {
@@ -52,7 +51,7 @@ void loop() {
 
     Serial.print("[HTTP] begin...\n");
     // configure traged server and url
-    http.begin(client, "http://" SERVER_IP "/postplain/"); //HTTP
+    http.begin(client, "http://" SERVER_IP "/postplain/");  // HTTP
     http.addHeader("Content-Type", "application/json");
 
     Serial.print("[HTTP] POST...\n");

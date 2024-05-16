@@ -20,6 +20,9 @@
 #define UPDATE_ERROR_BOOTSTRAP          (11)
 #define UPDATE_ERROR_SIGN               (12)
 #define UPDATE_ERROR_NO_DATA            (13)
+#define UPDATE_ERROR_OOM                (14)
+#define UPDATE_ERROR_RUNNING_ALREADY    (15)
+#define UPDATE_ERROR_UNKNOWN_COMMAND    (16)
 
 #define U_FLASH   0
 #define U_FS      100
@@ -51,8 +54,10 @@ class UpdaterVerifyClass {
 
 class UpdaterClass {
   public:
-    typedef std::function<void(size_t, size_t)> THandlerFunction_Progress;
-  
+    using THandlerFunction_Progress = std::function<void(size_t, size_t)>;
+    using THandlerFunction_Error = std::function<void(uint8_t)>;
+    using THandlerFunction = std::function<void()>;
+
     UpdaterClass();
     ~UpdaterClass();
 
@@ -66,7 +71,7 @@ class UpdaterClass {
     bool begin(size_t size, int command = U_FLASH, int ledPin = -1, uint8_t ledOn = LOW);
 
     /*
-      Run Updater from asynchronous callbacs
+      Run Updater from asynchronous callbacks
     */
     void runAsync(bool async){ _async = async; }
 
@@ -98,6 +103,11 @@ class UpdaterClass {
     bool end(bool evenIfRemaining = false);
 
     /*
+      Gets the last error description as string
+    */
+    String getErrorString() const;
+
+    /*
       Prints the last error to an output stream
     */
     void printError(Print &out);
@@ -120,7 +130,34 @@ class UpdaterClass {
     /*
       This callback will be called when Updater is receiving data
     */
-    UpdaterClass& onProgress(THandlerFunction_Progress fn);
+    UpdaterClass& onProgress(THandlerFunction_Progress fn) {
+      _progress_callback = std::move(fn);
+      return *this;
+    }
+
+    /*
+      This callback will be called when Updater ends
+    */
+    UpdaterClass& onError(THandlerFunction_Error fn) {
+      _error_callback = std::move(fn);
+      return *this;
+    }
+
+    /*
+      This callback will be called when Updater begins
+    */
+    UpdaterClass& onStart(THandlerFunction fn) {
+      _start_callback = std::move(fn);
+      return *this;
+    }
+
+    /*
+      This callback will be called when Updater ends
+    */
+    UpdaterClass& onEnd(THandlerFunction fn) {
+      _end_callback = std::move(fn);
+      return *this;
+    }
 
     //Helpers
     uint8_t getError(){ return _error; }
@@ -175,13 +212,13 @@ class UpdaterClass {
     }
 
   private:
-    void _reset();
+    void _reset(bool callback = true);
     bool _writeBuffer();
 
     bool _verifyHeader(uint8_t data);
     bool _verifyEnd();
 
-    void _setError(int error);    
+    void _setError(int error);
 
     bool _async = false;
     uint8_t _error = 0;
@@ -202,8 +239,12 @@ class UpdaterClass {
     // Optional signed binary verification
     UpdaterHashClass *_hash = nullptr;
     UpdaterVerifyClass *_verify = nullptr;
-    // Optional progress callback function
+
+    // Optional lifetime callback functions
     THandlerFunction_Progress _progress_callback = nullptr;
+    THandlerFunction_Error _error_callback = nullptr;
+    THandlerFunction _start_callback = nullptr;
+    THandlerFunction _end_callback = nullptr;
 };
 
 extern UpdaterClass Update;

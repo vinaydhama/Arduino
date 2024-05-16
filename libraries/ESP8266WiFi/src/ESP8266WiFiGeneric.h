@@ -24,6 +24,10 @@
 #define ESP8266WIFIGENERIC_H_
 
 #include "ESP8266WiFiType.h"
+
+#include <IPAddress.h>
+#include <lwip/dns.h>
+
 #include <functional>
 #include <memory>
 
@@ -44,11 +48,14 @@ typedef void (*WiFiEventCb)(WiFiEvent_t);
 
 enum class DNSResolveType: uint8_t
 {
-    DNS_AddrType_IPv4 = 0,	// LWIP_DNS_ADDRTYPE_IPV4 = 0
-    DNS_AddrType_IPv6,		// LWIP_DNS_ADDRTYPE_IPV6 = 1
-    DNS_AddrType_IPv4_IPv6,	// LWIP_DNS_ADDRTYPE_IPV4_IPV6 = 2
-    DNS_AddrType_IPv6_IPv4	// LWIP_DNS_ADDRTYPE_IPV6_IPV4 = 3
+    DNS_AddrType_IPv4 = LWIP_DNS_ADDRTYPE_IPV4,
+    DNS_AddrType_IPv6 = LWIP_DNS_ADDRTYPE_IPV6,
+    DNS_AddrType_IPv4_IPv6 = LWIP_DNS_ADDRTYPE_IPV4_IPV6,
+    DNS_AddrType_IPv6_IPv4 = LWIP_DNS_ADDRTYPE_IPV6_IPV4,
 };
+
+inline constexpr auto DNSDefaultTimeoutMs = 10000;
+inline constexpr auto DNSResolveTypeDefault = static_cast<DNSResolveType>(LWIP_DNS_ADDRTYPE_DEFAULT);
 
 struct WiFiState;
 
@@ -64,15 +71,15 @@ class ESP8266WiFiGenericClass {
         void onEvent(WiFiEventCb cb, WiFiEvent_t event = WIFI_EVENT_ANY) __attribute__((deprecated));
 
         // Subscribe to specific event and get event information as an argument to the callback
-        WiFiEventHandler onStationModeConnected(std::function<void(const WiFiEventStationModeConnected&)>);
-        WiFiEventHandler onStationModeDisconnected(std::function<void(const WiFiEventStationModeDisconnected&)>);
-        WiFiEventHandler onStationModeAuthModeChanged(std::function<void(const WiFiEventStationModeAuthModeChanged&)>);
-        WiFiEventHandler onStationModeGotIP(std::function<void(const WiFiEventStationModeGotIP&)>);
-        WiFiEventHandler onStationModeDHCPTimeout(std::function<void(void)>);
-        WiFiEventHandler onSoftAPModeStationConnected(std::function<void(const WiFiEventSoftAPModeStationConnected&)>);
-        WiFiEventHandler onSoftAPModeStationDisconnected(std::function<void(const WiFiEventSoftAPModeStationDisconnected&)>);
-        WiFiEventHandler onSoftAPModeProbeRequestReceived(std::function<void(const WiFiEventSoftAPModeProbeRequestReceived&)>);
-        WiFiEventHandler onWiFiModeChange(std::function<void(const WiFiEventModeChange&)>);
+        [[nodiscard]] WiFiEventHandler onStationModeConnected(std::function<void(const WiFiEventStationModeConnected&)>);
+        [[nodiscard]] WiFiEventHandler onStationModeDisconnected(std::function<void(const WiFiEventStationModeDisconnected&)>);
+        [[nodiscard]] WiFiEventHandler onStationModeAuthModeChanged(std::function<void(const WiFiEventStationModeAuthModeChanged&)>);
+        [[nodiscard]] WiFiEventHandler onStationModeGotIP(std::function<void(const WiFiEventStationModeGotIP&)>);
+        [[nodiscard]] WiFiEventHandler onStationModeDHCPTimeout(std::function<void(void)>);
+        [[nodiscard]] WiFiEventHandler onSoftAPModeStationConnected(std::function<void(const WiFiEventSoftAPModeStationConnected&)>);
+        [[nodiscard]] WiFiEventHandler onSoftAPModeStationDisconnected(std::function<void(const WiFiEventSoftAPModeStationDisconnected&)>);
+        [[nodiscard]] WiFiEventHandler onSoftAPModeProbeRequestReceived(std::function<void(const WiFiEventSoftAPModeProbeRequestReceived&)>);
+        [[nodiscard]] WiFiEventHandler onWiFiModeChange(std::function<void(const WiFiEventModeChange&)>);
 
         uint8_t channel(void);
 

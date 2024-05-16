@@ -3,11 +3,10 @@
 #define __CUSTOM_EXTRA_DEFINES__
 
 #endif
-
 #ifndef MYLWIPOPTS_H
 #define MYLWIPOPTS_H
 
-// opt.h version lwip-2.1.0rc1 for esp8266
+/* opt.h version lwip-2.1.3 for esp8266 */
 
 /**
  * @file
@@ -996,7 +995,7 @@
 #if !LWIP_IPV4
 /* disable AUTOIP when IPv4 is disabled */
 #undef LWIP_AUTOIP
-#define LWIP_AUTOIP 0
+#define LWIP_AUTOIP                     0
 #endif /* !LWIP_IPV4 */
 
 /**
@@ -1557,15 +1556,23 @@
  * TCP_MSS, IP header, and link header.
  */
 #if !defined PBUF_POOL_BUFSIZE || defined __DOXYGEN__
-#define PBUF_POOL_BUFSIZE               LWIP_MEM_ALIGN_SIZE(TCP_MSS+40+PBUF_LINK_ENCAPSULATION_HLEN+PBUF_LINK_HLEN)
+#define PBUF_POOL_BUFSIZE               LWIP_MEM_ALIGN_SIZE(TCP_MSS+PBUF_IP_HLEN+PBUF_TRANSPORT_HLEN+PBUF_LINK_ENCAPSULATION_HLEN+PBUF_LINK_HLEN)
 #endif
 
 /**
  * LWIP_PBUF_REF_T: Refcount type in pbuf.
  * Default width of u8_t can be increased if 255 refs are not enough for you.
  */
-#ifndef LWIP_PBUF_REF_T
+#if !defined LWIP_PBUF_REF_T || defined __DOXYGEN__
 #define LWIP_PBUF_REF_T                 u8_t
+#endif
+
+/**
+ * LWIP_PBUF_CUSTOM_DATA: Store private data on pbufs (e.g. timestamps)
+ * This extends struct pbuf so user can store custom data on every pbuf.
+ */
+#if !defined LWIP_PBUF_CUSTOM_DATA || defined __DOXYGEN__
+#define LWIP_PBUF_CUSTOM_DATA
 #endif
 /**
  * @}
@@ -1924,11 +1931,8 @@
 
 /** LWIP_NETCONN_FULLDUPLEX==1: Enable code that allows reading from one thread,
  * writing from a 2nd thread and closing from a 3rd thread at the same time.
- * ATTENTION: This is currently really alpha! Some requirements:
- * - LWIP_NETCONN_SEM_PER_THREAD==1 is required to use one socket/netconn from
- *   multiple threads at once
- * - sys_mbox_free() has to unblock receive tasks waiting on recvmbox/acceptmbox
- *   and prevent a task pending on this during/after deletion
+ * LWIP_NETCONN_SEM_PER_THREAD==1 is required to use one socket/netconn from
+ * multiple threads at once!
  */
 #if !defined LWIP_NETCONN_FULLDUPLEX || defined __DOXYGEN__
 #define LWIP_NETCONN_FULLDUPLEX         0
@@ -2442,7 +2446,7 @@
  * LWIP_IPV6_FORWARD==1: Forward IPv6 packets across netifs
  */
 #if !defined LWIP_IPV6_FORWARD || defined __DOXYGEN__
-#define LWIP_IPV6_FORWARD               0 // 0
+#define LWIP_IPV6_FORWARD               0
 #endif
 
 /**
@@ -2464,7 +2468,7 @@
  * network startup.
  */
 #if !defined LWIP_IPV6_SEND_ROUTER_SOLICIT || defined __DOXYGEN__
-#define LWIP_IPV6_SEND_ROUTER_SOLICIT   1
+#define LWIP_IPV6_SEND_ROUTER_SOLICIT   LWIP_IPV6
 #endif
 
 /**
@@ -2509,10 +2513,12 @@
 
 /**
  * LWIP_ICMP6_DATASIZE: bytes from original packet to send back in
- * ICMPv6 error messages.
+ * ICMPv6 error messages (0 = default of IP6_MIN_MTU_LENGTH)
+ * ATTENTION: RFC4443 section 2.4 says IP6_MIN_MTU_LENGTH is a MUST,
+ * so override this only if you absolutely have to!
  */
 #if !defined LWIP_ICMP6_DATASIZE || defined __DOXYGEN__
-#define LWIP_ICMP6_DATASIZE             8
+#define LWIP_ICMP6_DATASIZE             0
 #endif
 
 /**
@@ -2676,7 +2682,7 @@
  * servers to the DNS module.
  */
 #if !defined LWIP_ND6_RDNSS_MAX_DNS_SERVERS || defined __DOXYGEN__
-#define LWIP_ND6_RDNSS_MAX_DNS_SERVERS  0 // 0
+#define LWIP_ND6_RDNSS_MAX_DNS_SERVERS  0
 #endif
 /**
  * @}
@@ -2715,7 +2721,7 @@
  * void dhcp6_set_ntp_servers(u8_t num_ntp_servers, ip_addr_t* ntp_server_addrs);
 */
 #if !defined LWIP_DHCP6_GET_NTP_SRV || defined __DOXYGEN__
-#define LWIP_DHCP6_GET_NTP_SRV          1 // with 1: dhcp6_set_ntp_servers() must be implemented
+#define LWIP_DHCP6_GET_NTP_SRV          1
 #endif
 
 /**
@@ -3502,9 +3508,6 @@
 #if !defined DHCP6_DEBUG || defined __DOXYGEN__
 #define DHCP6_DEBUG                     LWIP_DBG_OFF
 #endif
-/**
- * @}
- */
 
 /**
  * NAPT_DEBUG: Enable debugging for NAPT.
@@ -3512,6 +3515,10 @@
 #ifndef NAPT_DEBUG
 #define NAPT_DEBUG                       LWIP_DBG_OFF
 #endif
+
+/**
+ * @}
+ */
 
 /**
  * LWIP_TESTMODE: Changes to make unit test possible
@@ -3547,6 +3554,11 @@
    --------------------------------------------------
 */
 
+#include "lwip/debug.h"
+#include "arch/cc.h"
+#include "lwip-git-hash.h"
+#include <sys/time.h> // settimeofday() + struct timeval
+
 #ifndef LWIP_FEATURES
 #error LWIP_FEATURES must be defined
 #endif
@@ -3554,8 +3566,12 @@
 #define PPPOS_SUPPORT       IP_NAPT         // because we don't have proxyarp yet
 #define PPP_SUPPORT         PPPOS_SUPPORT
 #define PPP_SERVER          1
-#define PPP_DEBUG           ULWIPDEBUG
 #define PRINTPKT_SUPPORT    ULWIPDEBUG
+
+#if ULWIPDEBUG
+#define PPP_DEBUG           LWIP_DBG_ON
+#define PING_DEBUG          LWIP_DBG_ON
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -3583,6 +3599,19 @@ struct pbuf;
 extern void lwip_hook_dhcp_parse_option(struct netif *netif, struct dhcp *dhcp, int state, struct dhcp_msg *msg,
                                         int msg_type, int option, int option_len, struct pbuf *pbuf,
                                         int option_value_offset);
+
+#if LWIP_FEATURES
+#define LWIP_HOOK_DHCP_APPEND_OPTIONS(netif, dhcp, state, msg, msg_type, option_len_ptr) { \
+   /* https://github.com/esp8266/Arduino/issues/8223 */ \
+   lwip_hook_dhcp_amend_options(netif, dhcp, state, msg, msg_type, option_len_ptr); \
+   /* https://github.com/esp8266/Arduino/issues/8247 */ \
+   if ((msg_type) == DHCP_DISCOVER) \
+      *(option_len_ptr) = dhcp_option_hostname(*(option_len_ptr), (msg)->options, netif); \
+}
+
+extern void lwip_hook_dhcp_amend_options(struct netif *netif, struct dhcp *dhcp, int state, struct dhcp_msg *msg,
+                                         int msg_type, u16 *option_len_ptr);
+#endif
 
 /*
    --------------------------------------------------
@@ -3628,11 +3657,6 @@ uint32_t SNTP_STARTUP_DELAY_FUNC;
    ------------------- LOCAL FIXES ------------------
    --------------------------------------------------
 */
-
-#include "lwip/debug.h"
-#include "arch/cc.h"
-#include "lwip-git-hash.h"
-#include <sys/time.h> // settimeofday() + struct timeval
 
 // allow to handle special packets (user redefinable)
 struct pbuf;
@@ -3690,4 +3714,4 @@ void tcp_kill_timewait (void);
 } // extern "C"
 #endif
 
-#endif // MYLWIPOPTS_H
+#endif /* MYLWIPOPTS_H */

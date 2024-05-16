@@ -5,13 +5,15 @@
 
 #ifndef STASSID
 #define STASSID "your-ssid"
-#define STAPSK  "your-password"
+#define STAPSK "your-password"
 #endif
 
 const char* ssid = STASSID;
 const char* password = STAPSK;
 
 ESP8266WebServer server(80);
+
+String bigChunk;
 
 const int led = 13;
 
@@ -31,11 +33,19 @@ void handleNotFound() {
   message += "\nArguments: ";
   message += server.args();
   message += "\n";
-  for (uint8_t i = 0; i < server.args(); i++) {
-    message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
-  }
+  for (uint8_t i = 0; i < server.args(); i++) { message += " " + server.argName(i) + ": " + server.arg(i) + "\n"; }
   server.send(404, "text/plain", message);
   digitalWrite(led, 0);
+}
+
+void handleChunked() {
+  server.chunkedResponseModeStart(200, F("text/html"));
+
+  server.sendContent(bigChunk);
+  server.sendContent(F("chunk 2"));
+  server.sendContent(bigChunk);
+
+  server.chunkedResponseFinalize();
 }
 
 void setup(void) {
@@ -57,9 +67,7 @@ void setup(void) {
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 
-  if (MDNS.begin("esp8266")) {
-    Serial.println("MDNS responder started");
-  }
+  if (MDNS.begin("esp8266")) { Serial.println("MDNS responder started"); }
 
   server.on("/", handleRoot);
 
@@ -84,22 +92,24 @@ void setup(void) {
     server.send(200, "image/gif", gif_colored, sizeof(gif_colored));
   });
 
+  server.on("/chunks", handleChunked);
+
   server.onNotFound(handleNotFound);
 
   /////////////////////////////////////////////////////////
   // Hook examples
 
-  server.addHook([](const String & method, const String & url, WiFiClient * client, ESP8266WebServer::ContentTypeFunction contentType) {
-    (void)method;      // GET, PUT, ...
-    (void)url;         // example: /root/myfile.html
-    (void)client;      // the webserver tcp client connection
-    (void)contentType; // contentType(".html") => "text/html"
+  server.addHook([](const String& method, const String& url, WiFiClient* client, ESP8266WebServer::ContentTypeFunction contentType) {
+    (void)method;       // GET, PUT, ...
+    (void)url;          // example: /root/myfile.html
+    (void)client;       // the webserver tcp client connection
+    (void)contentType;  // contentType(".html") => "text/html"
     Serial.printf("A useless web hook has passed\n");
     Serial.printf("(this hook is in 0x%08x area (401x=IRAM 402x=FLASH))\n", esp_get_program_counter());
     return ESP8266WebServer::CLIENT_REQUEST_CAN_CONTINUE;
   });
 
-  server.addHook([](const String&, const String & url, WiFiClient*, ESP8266WebServer::ContentTypeFunction) {
+  server.addHook([](const String&, const String& url, WiFiClient*, ESP8266WebServer::ContentTypeFunction) {
     if (url.startsWith("/fail")) {
       Serial.printf("An always failing web hook has been triggered\n");
       return ESP8266WebServer::CLIENT_MUST_STOP;
@@ -107,7 +117,7 @@ void setup(void) {
     return ESP8266WebServer::CLIENT_REQUEST_CAN_CONTINUE;
   });
 
-  server.addHook([](const String&, const String & url, WiFiClient * client, ESP8266WebServer::ContentTypeFunction) {
+  server.addHook([](const String&, const String& url, WiFiClient* client, ESP8266WebServer::ContentTypeFunction) {
     if (url.startsWith("/dump")) {
       Serial.printf("The dumper web hook is on the run\n");
 
@@ -137,7 +147,7 @@ void setup(void) {
       // check the client connection: it should not immediately be closed
       // (make another '/dump' one to close the first)
       Serial.printf("\nTelling server to forget this connection\n");
-      static WiFiClient forgetme = *client; // stop previous one if present and transfer client refcounter
+      static WiFiClient forgetme = *client;  // stop previous one if present and transfer client refcounter
       return ESP8266WebServer::CLIENT_IS_GIVEN;
     }
     return ESP8266WebServer::CLIENT_REQUEST_CAN_CONTINUE;
@@ -145,6 +155,15 @@ void setup(void) {
 
   // Hook examples
   /////////////////////////////////////////////////////////
+
+  // prepare chunk in ram for sending
+  constexpr int chunkLen = 4000;  // ~4KB chunk
+  bigChunk.reserve(chunkLen);
+  bigChunk = F("chunk of len ");
+  bigChunk += chunkLen;
+  String piece = F("-blah");
+  while (bigChunk.length() < chunkLen - piece.length())
+    bigChunk += piece;
 
   server.begin();
   Serial.println("HTTP server started");
